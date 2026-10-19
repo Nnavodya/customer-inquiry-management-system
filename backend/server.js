@@ -1,26 +1,149 @@
 
+
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+const pool = require("./db");
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(cors({
-  origin: "http://localhost:3000",
-}));
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  })
+);
 
 app.use(express.json());
 
-// Test route
+// API welcome route
 app.get("/", (req, res) => {
   res.json({
     message: "Coffee Ninja API is running!",
   });
 });
 
-// Start server
+// Test PostgreSQL connection
+app.get("/api/health", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT current_database() AS database"
+    );
+
+    res.json({
+      status: "ok",
+      message: "Database connection successful!",
+      database: result.rows[0].database,
+    });
+  } catch (error) {
+    console.error("Database connection failed:", error.message);
+
+    res.status(500).json({
+      status: "error",
+      message: "Database connection failed.",
+    });
+  }
+});
+
+
+app.post("/api/inquiries", async (req, res) => {
+  try {
+    const { customer_name, contact, subject, description } = req.body;
+
+    if (
+      typeof customer_name !== "string" ||
+      typeof contact !== "string" ||
+      typeof subject !== "string" ||
+      typeof description !== "string" ||
+      !customer_name.trim() ||
+      !contact.trim() ||
+      !subject.trim() ||
+      !description.trim()
+    ) {
+      return res.status(400).json({
+        message: "All fields are required.",
+      });
+    }
+
+    if (
+      customer_name.trim().length > 100 ||
+      contact.trim().length > 30 ||
+      subject.trim().length > 150
+    ) {
+      return res.status(400).json({
+        message: "One or more fields exceed the allowed length.",
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO inquiries
+        (customer_name, contact, subject, description)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [
+        customer_name.trim(),
+        contact.trim(),
+        subject.trim(),
+        description.trim(),
+      ]
+    );
+
+    return res.status(201).json({
+      message: "Inquiry created successfully.",
+      inquiry: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Create inquiry failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to create inquiry.",
+    });
+  }
+});
+
+
+app.get("/api/inquiries", async (req, res) => {
+  try {
+    const search = String(req.query.search || "").trim();
+    const status = String(req.query.status || "").trim();
+
+    const allowedStatuses = ["New", "In Progress", "Resolved"];
+
+    if (status && !allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        message: "Invalid inquiry status.",
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT *
+       FROM inquiries
+       WHERE (
+         $1 = ''
+         OR customer_name ILIKE '%' || $1 || '%'
+         OR contact ILIKE '%' || $1 || '%'
+         OR subject ILIKE '%' || $1 || '%'
+         OR description ILIKE '%' || $1 || '%'
+       )
+       AND ($2 = '' OR status = $2)
+       ORDER BY created_at DESC, id DESC`,
+      [search, status]
+    );
+
+    return res.json({
+      count: result.rows.length,
+      inquiries: result.rows,
+    });
+  } catch (error) {
+    console.error("Fetch inquiries failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to fetch inquiries.",
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
