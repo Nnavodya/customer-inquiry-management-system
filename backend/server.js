@@ -12,9 +12,11 @@ const pool = require("./db");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    credentials: true,
   })
 );
 
@@ -258,6 +260,27 @@ app.post("/api/auth/login", async (req, res) => {
       message: "Unable to sign in.",
     });
   }
+});
+
+
+app.get("/api/auth/me", requireAuth, (req, res) => {
+  res.json({
+    staff: {
+      id: req.staff.id,
+      username: req.staff.username,
+    },
+  });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+  });
+
+  res.json({ message: "Logged out successfully." });
 });
 
 
