@@ -1,0 +1,25 @@
+
+# Dependencies
+node_modules/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Next.js build files
+frontend/.next/
+frontend/out/
+
+# Build output
+backend/dist/
+backend/build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
