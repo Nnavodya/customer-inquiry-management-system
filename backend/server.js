@@ -1,4 +1,7 @@
-
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
+const requireAuth = require("./auth");
 
 const express = require("express");
 const cors = require("cors");
@@ -16,6 +19,8 @@ app.use(
 );
 
 app.use(express.json());
+
+app.use(cookieParser());
 
 // API welcome route
 app.get("/", (req, res) => {
@@ -47,7 +52,7 @@ app.get("/api/health", async (req, res) => {
 });
 
 
-app.post("/api/inquiries", async (req, res) => {
+app.post("/api/inquiries", requireAuth , async (req, res) => {
   try {
     const { customer_name, contact, subject, description } = req.body;
 
@@ -103,7 +108,7 @@ app.post("/api/inquiries", async (req, res) => {
 });
 
 
-app.get("/api/inquiries", async (req, res) => {
+app.get("/api/inquiries", requireAuth, async (req, res) => {
   try {
     const search = String(req.query.search || "").trim();
     const status = String(req.query.status || "").trim();
@@ -145,7 +150,7 @@ app.get("/api/inquiries", async (req, res) => {
 });
 
 
-app.patch("/api/inquiries/:id/status", async (req, res) => {
+app.patch("/api/inquiries/:id/status", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -190,6 +195,71 @@ app.patch("/api/inquiries/:id/status", async (req, res) => {
     });
   }
 });
+
+
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (
+      typeof username !== "string" ||
+      typeof password !== "string" ||
+      !username.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        message: "Username and password are required.",
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT id, username, password_hash
+       FROM staff_users
+       WHERE username = $1`,
+      [username.trim()]
+    );
+
+    const staff = result.rows[0];
+
+    if (
+      !staff ||
+      !(await bcrypt.compare(password, staff.password_hash))
+    ) {
+      return res.status(401).json({
+        message: "Invalid username or password.",
+      });
+    }
+
+    const token = jwt.sign(
+      { id: staff.id, username: staff.username },
+      process.env.JWT_SECRET,
+      { expiresIn: "2h" }
+    );
+
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 2 * 60 * 60 * 1000,
+      path: "/",
+    });
+
+    return res.json({
+      message: "Login successful.",
+      staff: {
+        id: staff.id,
+        username: staff.username,
+      },
+    });
+  } catch (error) {
+    console.error("Login failed:", error.message);
+
+    return res.status(500).json({
+      message: "Unable to sign in.",
+    });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
