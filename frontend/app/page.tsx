@@ -1,8 +1,12 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+
+import Header from "@/components/Header";
+import Sidebar from "@/components/Sidebar";
+import Footer from "@/components/Footer";
 
 const API_URL = "http://localhost:5000/api";
 
@@ -18,7 +22,21 @@ type Inquiry = {
   created_at: string;
 };
 
+type Staff = {
+  id: number;
+  username: string;
+};
+
 export default function Home() {
+  const [staff, setStaff] = useState<Staff | null>(null);
+  const [activePage, setActivePage] = useState<
+  "dashboard" | "inquiries" | "new-inquiry">("dashboard");
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
+
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [contact, setContact] = useState("");
@@ -26,50 +44,208 @@ export default function Home() {
   const [description, setDescription] = useState("");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  async function loadInquiries(
-    searchText = search,
-    statusText = filterStatus
-  ) {
+  const loadInquiries = useCallback(
+    async (searchText = "", statusText = "") => {
+      setLoading(true);
+      setError("");
+
+      try {
+        const params = new URLSearchParams();
+
+        if (searchText.trim()) {
+          params.set("search", searchText.trim());
+        }
+
+        if (statusText) {
+          params.set("status", statusText);
+        }
+
+        const response = await fetch(
+          `${API_URL}/inquiries?${params.toString()}`,
+          { credentials: "include" }
+        );
+
+        const data = await response.json();
+
+        if (response.status === 401) {
+          setStaff(null);
+          throw new Error("Your session expired. Please sign in again.");
+        }
+
+        if (!response.ok) {
+          throw new Error(data.message || "Could not load inquiries.");
+        }
+
+        setInquiries(data.inquiries);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Could not connect to the server."
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        const response = await fetch(`${API_URL}/auth/me`, {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          setStaff(null);
+          return;
+        }
+
+        const data = await response.json();
+        setStaff(data.staff);
+      } catch {
+        setError("Could not connect to the backend server.");
+      } finally {
+        setCheckingSession(false);
+      }
+    }
+
+    checkSession();
+  }, []);
+
+ useEffect(() => {
+  if (!staff) return;
+
+  let cancelled = false;
+
+  async function fetchInquiries() {
     setLoading(true);
     setError("");
 
     try {
-      const params = new URLSearchParams();
-
-      if (searchText.trim()) {
-        params.set("search", searchText.trim());
-      }
-
-      if (statusText) {
-        params.set("status", statusText);
-      }
-
       const response = await fetch(
-        `${API_URL}/inquiries?${params.toString()}`
+        `${API_URL}/inquiries`,
+        { credentials: "include" }
       );
 
       const data = await response.json();
+
+      if (response.status === 401) {
+        setStaff(null);
+        throw new Error("Your session expired. Please sign in again.");
+      }
 
       if (!response.ok) {
         throw new Error(data.message || "Could not load inquiries.");
       }
 
-      setInquiries(data.inquiries);
-    } catch {
-      setError("Could not connect to the server. Check that the backend is running.");
+      if (!cancelled) {
+        setInquiries(data.inquiries);
+      }
+    } catch (err) {
+      if (!cancelled) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Could not connect to the server."
+        );
+      }
     } finally {
-      setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+      }
     }
   }
 
-  useEffect(() => {
-    loadInquiries("", "");
-  }, []);
+  fetchInquiries();
+
+  return () => {
+    cancelled = true;
+  };
+}, [staff]);
+
+function handleNavigate(
+  page: "dashboard" | "inquiries" | "new-inquiry"
+) {
+  setActivePage(page);
+
+  const targetId =
+    page === "new-inquiry"
+      ? "new-inquiry"
+      : page === "inquiries"
+        ? "inquiries"
+        : "dashboard";
+
+  document.getElementById(targetId)?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoggingIn(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Login failed.");
+      }
+
+      setStaff(data.staff);
+      setPassword("");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not sign in. Please try again."
+      );
+    } finally {
+      setLoggingIn(false);
+    }
+  }
+
+  async function handleLogout() {
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Logout failed. Please try again.");
+      }
+
+      setStaff(null);
+      setInquiries([]);
+      setUsername("");
+      setPassword("");
+      setMessage("You have signed out successfully.");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not sign out."
+      );
+    }
+  }
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -81,6 +257,7 @@ export default function Home() {
       const response = await fetch(`${API_URL}/inquiries`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           customer_name: customerName,
           contact,
@@ -90,6 +267,11 @@ export default function Home() {
       });
 
       const data = await response.json();
+
+      if (response.status === 401) {
+        setStaff(null);
+        throw new Error("Your session expired. Please sign in again.");
+      }
 
       if (!response.ok) {
         throw new Error(data.message || "Could not save inquiry.");
@@ -118,58 +300,157 @@ export default function Home() {
     setMessage("");
 
     try {
-      const response = await fetch(
-        `${API_URL}/inquiries/${id}/status`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
-        }
-      );
+      const response = await fetch(`${API_URL}/inquiries/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status }),
+      });
 
       const data = await response.json();
+
+      if (response.status === 401) {
+        setStaff(null);
+        throw new Error("Your session expired. Please sign in again.");
+      }
 
       if (!response.ok) {
         throw new Error(data.message || "Could not update status.");
       }
 
-      setMessage("Inquiry status updated.");
-      await loadInquiries();
+      setMessage("Inquiry status updated successfully.");
+      await loadInquiries(search, filterStatus);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Could not update status."
+        err instanceof Error
+          ? err.message
+          : "Could not update inquiry status."
       );
     }
   }
 
-  return (
-    <main className="min-h-screen bg-slate-100 px-4 py-8 text-slate-900 sm:px-8">
-      <div className="mx-auto max-w-6xl">
-        <header className="mb-8 rounded-2xl bg-slate-900 p-6 text-white shadow">
-          <p className="text-sm font-semibold uppercase tracking-widest text-cyan-300">
+  if (checkingSession) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+        <p className="text-slate-600">Checking your session...</p>
+      </main>
+    );
+  }
+
+  if (!staff) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
+        <section className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
+          <p className="text-sm font-bold uppercase tracking-widest text-cyan-700">
             Coffee Ninja
           </p>
-          <h1 className="mt-2 text-3xl font-bold">
-            Customer Inquiry Management
-          </h1>
-          <p className="mt-2 text-slate-300">
-            Record, search and manage customer inquiries.
-          </p>
-        </header>
 
+          <h1 className="mt-3 text-2xl font-bold">
+            Staff Sign In
+          </h1>
+
+          <p className="mt-2 text-sm text-slate-600">
+            Sign in to manage customer inquiries.
+          </p>
+
+          {error && (
+            <p role="alert" className="mt-5 rounded-lg bg-red-100 p-3 text-sm text-red-800">
+              {error}
+            </p>
+          )}
+
+          {message && (
+            <p role="status" className="mt-5 rounded-lg bg-green-100 p-3 text-sm text-green-800">
+              {message}
+            </p>
+          )}
+
+          <form onSubmit={handleLogin} className="mt-6 space-y-4">
+            <div>
+              <label htmlFor="username" className="mb-1 block text-sm font-medium">
+                Username
+              </label>
+              <input
+                id="username"
+                required
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 p-3 outline-none focus:border-cyan-700"
+                placeholder="Enter your username"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="mb-1 block text-sm font-medium">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 p-3 outline-none focus:border-cyan-700"
+                placeholder="Enter your password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loggingIn}
+              className="w-full rounded-lg bg-cyan-700 px-5 py-3 font-semibold text-white hover:bg-cyan-800 disabled:opacity-50"
+            >
+              {loggingIn ? "Signing in..." : "Sign In"}
+            </button>
+          </form>
+
+          <p className="mt-6 text-center text-xs text-slate-500">
+            Authorized staff only
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+ return (
+  <main
+    id="dashboard"
+    className="min-h-screen bg-slate-100 text-slate-900 md:flex"
+  >
+    <Sidebar
+      activePage={activePage}
+      onNavigate={handleNavigate}
+      onLogout={handleLogout}
+    />
+
+    <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+      <Header username={staff.username} onLogout={handleLogout} />
+
+      <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-8">
         {message && (
-          <p role="status" className="mb-4 rounded-lg bg-green-100 p-3 text-green-800">
+          <p
+            role="status"
+            className="mb-4 rounded-lg bg-green-100 p-3 text-green-800"
+          >
             {message}
           </p>
         )}
 
         {error && (
-          <p role="alert" className="mb-4 rounded-lg bg-red-100 p-3 text-red-800">
+          <p
+            role="alert"
+            className="mb-4 rounded-lg bg-red-100 p-3 text-red-800"
+          >
             {error}
           </p>
         )}
 
-        <section className="mb-8 rounded-2xl bg-white p-6 shadow-sm">
+        <section
+          id="new-inquiry"
+          className="mb-8 scroll-mt-6 rounded-2xl bg-white p-6 shadow-sm"
+        >
           <h2 className="mb-4 text-xl font-bold">Create New Inquiry</h2>
 
           <form onSubmit={handleCreate} className="grid gap-4 sm:grid-cols-2">
@@ -179,6 +460,7 @@ export default function Home() {
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
               placeholder="Customer name"
+              aria-label="Customer name"
               className="rounded-lg border border-slate-300 p-3"
             />
 
@@ -188,6 +470,7 @@ export default function Home() {
               value={contact}
               onChange={(e) => setContact(e.target.value)}
               placeholder="Contact number or email"
+              aria-label="Contact number or email"
               className="rounded-lg border border-slate-300 p-3"
             />
 
@@ -197,6 +480,7 @@ export default function Home() {
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="Inquiry subject"
+              aria-label="Inquiry subject"
               className="rounded-lg border border-slate-300 p-3 sm:col-span-2"
             />
 
@@ -205,6 +489,7 @@ export default function Home() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Short description"
+              aria-label="Short description"
               rows={3}
               className="rounded-lg border border-slate-300 p-3 sm:col-span-2"
             />
@@ -219,7 +504,10 @@ export default function Home() {
           </form>
         </section>
 
-        <section className="rounded-2xl bg-white p-6 shadow-sm">
+        <section
+          id="inquiries"
+          className="scroll-mt-6 rounded-2xl bg-white p-6 shadow-sm"
+        >
           <h2 className="mb-4 text-xl font-bold">Customer Inquiries</h2>
 
           <form
@@ -232,13 +520,15 @@ export default function Home() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, contact or subject..."
+              placeholder="Search name, contact, subject or description..."
+              aria-label="Search inquiries"
               className="min-w-0 flex-1 rounded-lg border border-slate-300 p-3"
             />
 
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
+              aria-label="Filter by status"
               className="rounded-lg border border-slate-300 p-3"
             >
               <option value="">All statuses</option>
@@ -256,7 +546,9 @@ export default function Home() {
           </form>
 
           {loading ? (
-            <p className="py-8 text-center text-slate-500">Loading inquiries...</p>
+            <p className="py-8 text-center text-slate-500">
+              Loading inquiries...
+            </p>
           ) : inquiries.length === 0 ? (
             <p className="py-8 text-center text-slate-500">
               No inquiries found. Try another search or create an inquiry.
@@ -304,6 +596,9 @@ export default function Home() {
           )}
         </section>
       </div>
-    </main>
-  );
+
+      <Footer />
+    </div>
+  </main>
+);
 }
