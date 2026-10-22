@@ -1,12 +1,13 @@
 
 type SidebarProps = {
-  activePage: "dashboard" | "inquiries" | "new-inquiry";
-  onNavigate: (page: "dashboard" | "inquiries" | "new-inquiry") => void;
+  activePage: "dashboard" | "inquiries" | "new-inquiry" | "team";
+  onNavigate: (page: "dashboard" | "inquiries" | "new-inquiry" | "team") => void;
   onLogout: () => void;
 };
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
+  { id: "team", label: "Team Profiles", icon: "👥" },
   { id: "inquiries", label: "All Inquiries", icon: "☷" },
   { id: "new-inquiry", label: "New Inquiry", icon: "+" },
 ] as const;
