@@ -18,7 +18,7 @@ export default function Sidebar({
   onLogout,
 }: SidebarProps) {
   return (
-    <aside className="flex w-full flex-col bg-slate-950 text-slate-300 md:min-h-full md:w-64 md:shrink-0">
+    <aside className="flex w-full flex-col bg-slate-950 text-slate-300 md:sticky md:top-0 md:h-screen md:w-64 md:shrink-0 md:self-start">
       <div className="border-b border-white/10 px-6 py-6">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-500 text-2xl">
@@ -31,7 +31,7 @@ export default function Sidebar({
         </div>
       </div>
 
-      <nav aria-label="Main navigation" className="flex-1 px-3 py-5">
+      <nav aria-label="Main navigation" className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
         <p className="mb-3 px-3 text-xs font-semibold uppercase tracking-widest text-slate-500">
           Workspace
         </p>
