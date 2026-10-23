@@ -25,6 +25,25 @@ describe("Sidebar navigation", () => {
     expect(onNavigate).toHaveBeenCalledWith("new-inquiry");
   });
 
+  it("calls the navigation handler when Team Profiles is clicked", () => {
+    const onNavigate = vi.fn();
+    const onLogout = vi.fn();
+
+    render(
+      <Sidebar
+        activePage="dashboard"
+        onNavigate={onNavigate}
+        onLogout={onLogout}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /team profiles/i })
+    );
+
+    expect(onNavigate).toHaveBeenCalledWith("team");
+  });
+
   it("calls the logout handler when Sign Out is clicked", () => {
     const onNavigate = vi.fn();
     const onLogout = vi.fn();
