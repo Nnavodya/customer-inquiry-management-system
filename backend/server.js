@@ -68,7 +68,7 @@ app.get("/api/staff", requireAuth, async (req, res) => {
        FROM staff_users su
        LEFT JOIN inquiries i ON su.id = i.assigned_to_id
        GROUP BY su.id, su.username, su.full_name
-       ORDER BY su.id ASC`
+       ORDER BY active_count ASC, su.id ASC`
     );
     return res.json({ staff: result.rows });
   } catch (error) {
