@@ -36,6 +36,23 @@ test("Security Rule: Unauthenticated requests to /api/inquiries are rejected wit
   assert.equal(data.message, "Please sign in to continue.");
 });
 
+test("Security Rule: Unauthenticated inquiry edits are rejected with 401", async () => {
+  const response = await fetch(`${baseUrl}/api/inquiries/1`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      customer_name: "Customer",
+      contact: "customer@example.com",
+      subject: "Updated subject",
+      description: "Updated description",
+    }),
+  });
+  const data = await response.json();
+
+  assert.equal(response.status, 401);
+  assert.equal(data.message, "Please sign in to continue.");
+});
+
 test("Security Rule: Invalid or malformed authentication tokens are rejected with 401", async () => {
   const response = await fetch(`${baseUrl}/api/inquiries`, {
     headers: {
@@ -49,6 +66,56 @@ test("Security Rule: Invalid or malformed authentication tokens are rejected wit
     data.message,
     "Your session is invalid or expired. Please sign in again."
   );
+});
+
+test("Inquiry edit validation: Invalid inquiry ID is rejected with 400", async () => {
+  const secret = process.env.JWT_SECRET || "default_test_secret";
+  const validToken = jwt.sign({ id: 1, username: "staff1" }, secret, {
+    expiresIn: "1h",
+  });
+
+  const response = await fetch(`${baseUrl}/api/inquiries/invalid-id`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: `token=${validToken}`,
+    },
+    body: JSON.stringify({
+      customer_name: "Customer",
+      contact: "customer@example.com",
+      subject: "Updated subject",
+      description: "Updated description",
+    }),
+  });
+  const data = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(data.message, /invalid inquiry id/i);
+});
+
+test("Inquiry edit validation: Missing required fields are rejected with 400", async () => {
+  const secret = process.env.JWT_SECRET || "default_test_secret";
+  const validToken = jwt.sign({ id: 1, username: "staff1" }, secret, {
+    expiresIn: "1h",
+  });
+
+  const response = await fetch(`${baseUrl}/api/inquiries/1`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: `token=${validToken}`,
+    },
+    body: JSON.stringify({
+      customer_name: "",
+      contact: "customer@example.com",
+      subject: "Updated subject",
+      description: "Updated description",
+    }),
+  });
+  const data = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(data.message, /required/i);
 });
 
 test("Direct Link Security & Validation: Invalid inquiry ID format is rejected with 400", async () => {

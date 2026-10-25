@@ -26,6 +26,11 @@ type Inquiry = {
   updated_at: string;
 };
 
+type InquiryEditForm = Pick<
+  Inquiry,
+  "customer_name" | "contact" | "subject" | "description"
+>;
+
 type Staff = {
   id: number;
   username: string;
@@ -50,6 +55,15 @@ export default function Home() {
 
   // Inquiries data
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [editingInquiryId, setEditingInquiryId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<InquiryEditForm>({
+    customer_name: "",
+    contact: "",
+    subject: "",
+    description: "",
+  });
+  const [editContactError, setEditContactError] = useState("");
+  const [updatingInquiry, setUpdatingInquiry] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [contact, setContact] = useState("");
   const [subject, setSubject] = useState("");
@@ -334,6 +348,83 @@ export default function Home() {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  function handleStartEditing(inquiry: Inquiry) {
+    setEditingInquiryId(inquiry.id);
+    setEditForm({
+      customer_name: inquiry.customer_name,
+      contact: inquiry.contact,
+      subject: inquiry.subject,
+      description: inquiry.description,
+    });
+    setEditContactError("");
+    setError("");
+  }
+
+  function handleCancelEditing() {
+    setEditingInquiryId(null);
+    setEditContactError("");
+  }
+
+  async function handleUpdateInquiry(
+    event: FormEvent<HTMLFormElement>,
+    inquiry: Inquiry
+  ) {
+    event.preventDefault();
+    const trimmedContact = editForm.contact.trim();
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedContact);
+    const isPhone = /^[\d\s+\-()]{7,25}$/.test(trimmedContact);
+    if (!isEmail && !isPhone) {
+      setEditContactError(
+        "Please enter a valid email address or phone number."
+      );
+      return;
+    }
+
+    setUpdatingInquiry(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/inquiries/${inquiry.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          ...editForm,
+          expected_updated_at: inquiry.updated_at,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        setStaff(null);
+        throw new Error("Your session expired. Please sign in again.");
+      }
+
+      if (response.status === 409) {
+        setEditingInquiryId(null);
+        setError(data.message || "This inquiry has changed. Please refresh.");
+        await loadInquiries(search, filterStatus, filterAssignedStaff);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.message || "Could not update inquiry.");
+      }
+
+      setEditingInquiryId(null);
+      setMessage(`Inquiry #${inquiry.id} updated successfully.`);
+      await loadInquiries(search, filterStatus, filterAssignedStaff);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not update inquiry."
+      );
+    } finally {
+      setUpdatingInquiry(false);
     }
   }
 
@@ -938,7 +1029,7 @@ export default function Home() {
                       </div>
 
                       {/* Status Action Dropdown */}
-                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
                         <label htmlFor={`status-${inquiry.id}`} className="text-xs font-semibold text-slate-500">
                           Status:
                         </label>
@@ -955,12 +1046,147 @@ export default function Home() {
                           <option value="In Progress">In Progress</option>
                           <option value="Resolved">Resolved</option>
                         </select>
+                        {editingInquiryId !== inquiry.id && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditing(inquiry)}
+                            className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                          >
+                            Edit details
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700 leading-relaxed bg-slate-50/70 p-3 rounded-lg border border-slate-100">
-                      {inquiry.description}
-                    </p>
+                    {editingInquiryId === inquiry.id ? (
+                      <form
+                        onSubmit={(event) =>
+                          handleUpdateInquiry(event, inquiry)
+                        }
+                        className="mt-4 grid gap-4 rounded-xl border border-cyan-200 bg-cyan-50/40 p-4 sm:grid-cols-2"
+                      >
+                        <div>
+                          <label
+                            htmlFor={`edit-customer-${inquiry.id}`}
+                            className="mb-1 block text-xs font-semibold text-slate-700"
+                          >
+                            Customer name
+                          </label>
+                          <input
+                            id={`edit-customer-${inquiry.id}`}
+                            required
+                            maxLength={100}
+                            value={editForm.customer_name}
+                            onChange={(event) =>
+                              setEditForm({
+                                ...editForm,
+                                customer_name: event.target.value,
+                              })
+                            }
+                            className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-cyan-700"
+                          />
+                        </div>
+                        <div>
+                          <label
+                            htmlFor={`edit-contact-${inquiry.id}`}
+                            className="mb-1 block text-xs font-semibold text-slate-700"
+                          >
+                            Contact
+                          </label>
+                          <input
+                            id={`edit-contact-${inquiry.id}`}
+                            required
+                            maxLength={50}
+                            value={editForm.contact}
+                            onChange={(event) => {
+                              setEditForm({
+                                ...editForm,
+                                contact: event.target.value,
+                              });
+                              setEditContactError("");
+                            }}
+                            aria-invalid={Boolean(editContactError)}
+                            aria-describedby={
+                              editContactError
+                                ? `edit-contact-error-${inquiry.id}`
+                                : undefined
+                            }
+                            className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-cyan-700"
+                          />
+                          {editContactError && (
+                            <p
+                              id={`edit-contact-error-${inquiry.id}`}
+                              className="mt-1 text-xs text-red-600"
+                            >
+                              {editContactError}
+                            </p>
+                          )}
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label
+                            htmlFor={`edit-subject-${inquiry.id}`}
+                            className="mb-1 block text-xs font-semibold text-slate-700"
+                          >
+                            Subject
+                          </label>
+                          <input
+                            id={`edit-subject-${inquiry.id}`}
+                            required
+                            maxLength={150}
+                            value={editForm.subject}
+                            onChange={(event) =>
+                              setEditForm({
+                                ...editForm,
+                                subject: event.target.value,
+                              })
+                            }
+                            className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-cyan-700"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label
+                            htmlFor={`edit-description-${inquiry.id}`}
+                            className="mb-1 block text-xs font-semibold text-slate-700"
+                          >
+                            Description
+                          </label>
+                          <textarea
+                            id={`edit-description-${inquiry.id}`}
+                            required
+                            rows={4}
+                            value={editForm.description}
+                            onChange={(event) =>
+                              setEditForm({
+                                ...editForm,
+                                description: event.target.value,
+                              })
+                            }
+                            className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm outline-none focus:border-cyan-700"
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2 sm:col-span-2">
+                          <button
+                            type="submit"
+                            disabled={updatingInquiry}
+                            className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {updatingInquiry ? "Saving..." : "Save changes"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelEditing}
+                            disabled={updatingInquiry}
+                            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700 leading-relaxed bg-slate-50/70 p-3 rounded-lg border border-slate-100">
+                        {inquiry.description}
+                      </p>
+                    )}
 
                     <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-400">
                       <span>

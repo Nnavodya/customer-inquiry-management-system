@@ -178,6 +178,117 @@ app.post("/api/inquiries", requireAuth, async (req, res) => {
   }
 });
 
+// Update the customer-provided details of an existing inquiry
+app.put("/api/inquiries/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { customer_name, contact, subject, description, expected_updated_at } =
+      req.body;
+
+    if (!/^[1-9]\d*$/.test(id)) {
+      return res.status(400).json({
+        message: "Invalid inquiry ID. Must be a positive integer.",
+      });
+    }
+
+    if (
+      typeof expected_updated_at !== "string" ||
+      Number.isNaN(new Date(expected_updated_at).getTime())
+    ) {
+      return res.status(400).json({
+        message: "A valid inquiry update timestamp is required.",
+      });
+    }
+
+    if (
+      typeof customer_name !== "string" ||
+      typeof contact !== "string" ||
+      typeof subject !== "string" ||
+      typeof description !== "string" ||
+      !customer_name.trim() ||
+      !contact.trim() ||
+      !subject.trim() ||
+      !description.trim()
+    ) {
+      return res.status(400).json({
+        message: "All fields are required.",
+      });
+    }
+
+    const trimmedCustomer = customer_name.trim();
+    const trimmedContact = contact.trim();
+    const trimmedSubject = subject.trim();
+    const trimmedDescription = description.trim();
+
+    if (
+      trimmedCustomer.length > 100 ||
+      trimmedContact.length > 50 ||
+      trimmedSubject.length > 150
+    ) {
+      return res.status(400).json({
+        message: "One or more fields exceed the allowed length.",
+      });
+    }
+
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedContact);
+    const isPhone = /^[\d\s+\-()]{7,25}$/.test(trimmedContact);
+    if (!isEmail && !isPhone) {
+      return res.status(400).json({
+        message: "Please provide a valid contact email address or phone number.",
+      });
+    }
+
+    const currentResult = await pool.query(
+      "SELECT id, updated_at FROM inquiries WHERE id = $1",
+      [id]
+    );
+
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({
+        message: `Inquiry #${id} does not exist.`,
+      });
+    }
+
+    const clientTime = new Date(expected_updated_at).getTime();
+    const serverTime = new Date(currentResult.rows[0].updated_at).getTime();
+    if (Math.abs(serverTime - clientTime) > 1000) {
+      return res.status(409).json({
+        message:
+          "This inquiry was modified by another session. Please refresh your screen to see the latest changes.",
+        current_updated_at: currentResult.rows[0].updated_at,
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE inquiries
+       SET customer_name = $1,
+           contact = $2,
+           subject = $3,
+           description = $4,
+           updated_at = NOW()
+       WHERE id = $5
+       RETURNING *`,
+      [
+        trimmedCustomer,
+        trimmedContact,
+        trimmedSubject,
+        trimmedDescription,
+        id,
+      ]
+    );
+
+    return res.json({
+      message: "Inquiry updated successfully.",
+      inquiry: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Update inquiry failed:", error.message);
+    return res.status(500).json({
+      message: "Unable to update inquiry.",
+    });
+  }
+});
+
 // List inquiries with search, status, and staff assignment filtering
 app.get("/api/inquiries", requireAuth, async (req, res) => {
   try {
