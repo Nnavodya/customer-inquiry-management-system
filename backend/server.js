@@ -68,7 +68,7 @@ app.get("/api/staff", requireAuth, async (req, res) => {
        FROM staff_users su
        LEFT JOIN inquiries i
          ON su.id = i.assigned_to_id
-        AND ($1 = 'admin' OR i.created_by_id = $2 OR i.assigned_to_id = $2)
+        AND ($1 = 'admin' OR i.assigned_to_id = $2)
        GROUP BY su.id, su.username, su.full_name
        ORDER BY active_count ASC, su.id ASC`,
       [req.staff.role, req.staff.id]
@@ -274,7 +274,7 @@ app.put("/api/inquiries/:id", requireAuth, async (req, res) => {
            description = $4,
            updated_at = NOW()
        WHERE id = $5
-         AND ($6 = 'admin' OR created_by_id = $7 OR assigned_to_id = $7)
+         AND ($6 = 'admin' OR assigned_to_id = $7)
        RETURNING *`,
       [
         trimmedCustomer,
@@ -344,7 +344,7 @@ app.get("/api/inquiries", requireAuth, async (req, res) => {
        )
        AND ($2 = '' OR i.status = $2)
        AND ($3 = '' OR i.assigned_to_id = $3::int)
-       AND ($4 = 'admin' OR i.created_by_id = $5 OR i.assigned_to_id = $5)
+       AND ($4 = 'admin' OR i.assigned_to_id = $5)
        ORDER BY i.created_at DESC, i.id DESC`,
       [search, status, assignedTo, req.staff.role, req.staff.id]
     );
@@ -389,7 +389,7 @@ app.get("/api/inquiries/:id", requireAuth, async (req, res) => {
        FROM inquiries i
        LEFT JOIN staff_users su ON i.assigned_to_id = su.id
        WHERE i.id = $1
-         AND ($2 = 'admin' OR i.created_by_id = $3 OR i.assigned_to_id = $3)`,
+         AND ($2 = 'admin' OR i.assigned_to_id = $3)`,
       [id, req.staff.role, req.staff.id]
     );
 
@@ -436,7 +436,7 @@ app.patch("/api/inquiries/:id/status", requireAuth, async (req, res) => {
       `SELECT id, status, updated_at
        FROM inquiries
        WHERE id = $1
-         AND ($2 = 'admin' OR created_by_id = $3 OR assigned_to_id = $3)`,
+         AND ($2 = 'admin' OR assigned_to_id = $3)`,
       [id, req.staff.role, req.staff.id]
     );
 
@@ -479,7 +479,7 @@ app.patch("/api/inquiries/:id/status", requireAuth, async (req, res) => {
       `UPDATE inquiries
        SET status = $1, updated_at = NOW()
        WHERE id = $2
-         AND ($3 = 'admin' OR created_by_id = $4 OR assigned_to_id = $4)
+         AND ($3 = 'admin' OR assigned_to_id = $4)
        RETURNING *`,
       [status, id, req.staff.role, req.staff.id]
     );
@@ -531,7 +531,7 @@ app.patch("/api/inquiries/:id/assign", requireAuth, async (req, res) => {
       `UPDATE inquiries
        SET assigned_to_id = $1, updated_at = NOW()
        WHERE id = $2
-         AND ($3 = 'admin' OR created_by_id = $4 OR assigned_to_id = $4)
+         AND ($3 = 'admin' OR assigned_to_id = $4)
        RETURNING *`,
       [assigned_to_id || null, id, req.staff.role, req.staff.id]
     );

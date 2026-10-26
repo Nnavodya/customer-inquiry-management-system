@@ -1,3 +1,4 @@
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
@@ -11,12 +12,15 @@ let baseUrl;
 
 function createToken({ id = 1, role = "employee" } = {}) {
   const secret = process.env.JWT_SECRET || "default_test_secret";
-  return jwt.sign({ id, username: role, role }, secret, { expiresIn: "1h" });
+  return jwt.sign({ id, username: role, role }, secret, {
+    expiresIn: "1h",
+  });
 }
 
 async function withQueryStub(queryStub, callback) {
   const originalQuery = pool.query;
   pool.query = queryStub;
+
   try {
     return await callback();
   } finally {
@@ -24,10 +28,11 @@ async function withQueryStub(queryStub, callback) {
   }
 }
 
-// Spin up test server on a free dynamic port before tests run
+// Start the test server on an available port.
 test.before(async () => {
   await new Promise((resolve) => {
     server = http.createServer(app);
+
     server.listen(0, "127.0.0.1", () => {
       const port = server.address().port;
       baseUrl = `http://127.0.0.1:${port}`;
@@ -40,10 +45,11 @@ test.after(async () => {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
   }
+
   await pool.end();
 });
 
-test("Security Rule: Unauthenticated requests to /api/inquiries are rejected with 401", async () => {
+test("Security: Unauthenticated inquiry requests are rejected", async () => {
   const response = await fetch(`${baseUrl}/api/inquiries`);
   const data = await response.json();
 
@@ -51,7 +57,7 @@ test("Security Rule: Unauthenticated requests to /api/inquiries are rejected wit
   assert.equal(data.message, "Please sign in to continue.");
 });
 
-test("Security Rule: Unauthenticated inquiry edits are rejected with 401", async () => {
+test("Security: Unauthenticated inquiry edits are rejected", async () => {
   const response = await fetch(`${baseUrl}/api/inquiries/1`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -62,18 +68,18 @@ test("Security Rule: Unauthenticated inquiry edits are rejected with 401", async
       description: "Updated description",
     }),
   });
+
   const data = await response.json();
 
   assert.equal(response.status, 401);
   assert.equal(data.message, "Please sign in to continue.");
 });
 
-test("Security Rule: Invalid or malformed authentication tokens are rejected with 401", async () => {
+test("Security: Invalid authentication tokens are rejected", async () => {
   const response = await fetch(`${baseUrl}/api/inquiries`, {
-    headers: {
-      Cookie: "token=invalid-tampered-token",
-    },
+    headers: { Cookie: "token=invalid-tampered-token" },
   });
+
   const data = await response.json();
 
   assert.equal(response.status, 401);
@@ -83,7 +89,7 @@ test("Security Rule: Invalid or malformed authentication tokens are rejected wit
   );
 });
 
-test("Security Rule: Signed tokens without a recognized role are rejected with 401", async () => {
+test("Security: Tokens without a recognized role are rejected", async () => {
   const secret = process.env.JWT_SECRET || "default_test_secret";
   const tokenWithoutRole = jwt.sign(
     { id: 1, username: "staff1" },
@@ -92,31 +98,28 @@ test("Security Rule: Signed tokens without a recognized role are rejected with 4
   );
 
   const response = await fetch(`${baseUrl}/api/inquiries`, {
-    headers: {
-      Cookie: `token=${tokenWithoutRole}`,
-    },
+    headers: { Cookie: `token=${tokenWithoutRole}` },
   });
+
   const data = await response.json();
 
   assert.equal(response.status, 401);
   assert.match(data.message, /session is invalid or expired/i);
 });
 
-test("Authentication: Role token with a numeric-string database ID is accepted", async () => {
+test("Authentication: Numeric-string database IDs are accepted", async () => {
   const token = createToken({ id: "7" });
 
   await withQueryStub(async () => ({ rows: [] }), async () => {
     const response = await fetch(`${baseUrl}/api/inquiries`, {
-      headers: {
-        Cookie: `token=${token}`,
-      },
+      headers: { Cookie: `token=${token}` },
     });
 
     assert.equal(response.status, 200);
   });
 });
 
-test("Access control: Employee inquiry list is scoped to created or assigned inquiries", async () => {
+test("Access control: Employees see only assigned inquiries", async () => {
   let queryText;
   let queryValues;
 
@@ -134,11 +137,11 @@ test("Access control: Employee inquiry list is scoped to created or assigned inq
     assert.equal(response.status, 200);
   });
 
-  assert.match(queryText, /i\.created_by_id = \$5 OR i\.assigned_to_id = \$5/);
+  assert.match(queryText, /i\.assigned_to_id = \$5/);
   assert.deepEqual(queryValues, ["", "", "", "employee", 7]);
 });
 
-test("Access control: Admin inquiry list bypasses employee ownership filtering", async () => {
+test("Access control: Admins can see all inquiries", async () => {
   let queryText;
   let queryValues;
 
@@ -156,11 +159,15 @@ test("Access control: Admin inquiry list bypasses employee ownership filtering",
     assert.equal(response.status, 200);
   });
 
-  assert.match(queryText, /\$4 = 'admin' OR i\.created_by_id = \$5/);
+  assert.match(
+    queryText,
+    /\$4 = 'admin' OR i\.assigned_to_id = \$5/
+  );
+
   assert.deepEqual(queryValues, ["", "", "", "admin", 9]);
 });
 
-test("Access control: Employee cannot fetch an inquiry they neither created nor were assigned", async () => {
+test("Access control: Employees cannot fetch unassigned inquiries", async () => {
   let queryText;
   let queryValues;
 
@@ -174,17 +181,25 @@ test("Access control: Employee cannot fetch an inquiry they neither created nor 
         Cookie: `token=${createToken({ id: 7 })}`,
       },
     });
+
     const data = await response.json();
 
     assert.equal(response.status, 404);
-    assert.match(data.message, /does not exist or you do not have access/i);
+    assert.match(
+      data.message,
+      /does not exist or you do not have access/i
+    );
   });
 
-  assert.match(queryText, /i\.created_by_id = \$3 OR i\.assigned_to_id = \$3/);
+  assert.match(
+    queryText,
+    /\$2 = 'admin' OR i\.assigned_to_id = \$3/
+  );
+
   assert.deepEqual(queryValues, ["42", "employee", 7]);
 });
 
-test("Access control: Employee cannot edit an inquiry they cannot access", async () => {
+test("Access control: Employees cannot edit unassigned inquiries", async () => {
   let queryText;
 
   await withQueryStub(async (text) => {
@@ -209,10 +224,13 @@ test("Access control: Employee cannot edit an inquiry they cannot access", async
     assert.equal(response.status, 404);
   });
 
-  assert.match(queryText, /created_by_id = \$3 OR assigned_to_id = \$3/);
+  assert.match(
+    queryText,
+    /created_by_id = \$3 OR assigned_to_id = \$3|assigned_to_id = \$3/
+  );
 });
 
-test("Access control: Employee cannot change status of an inquiry they cannot access", async () => {
+test("Access control: Employees cannot change status of unassigned inquiries", async () => {
   let queryText;
 
   await withQueryStub(async (text) => {
@@ -231,17 +249,22 @@ test("Access control: Employee cannot change status of an inquiry they cannot ac
     assert.equal(response.status, 404);
   });
 
-  assert.match(queryText, /created_by_id = \$3 OR assigned_to_id = \$3/);
+  assert.match(
+    queryText,
+    /\$2 = 'admin' OR assigned_to_id = \$3/
+  );
 });
 
-test("Access control: Employee cannot reassign an inquiry they cannot access", async () => {
+test("Access control: Employees cannot reassign unassigned inquiries", async () => {
   const queries = [];
 
   await withQueryStub(async (text) => {
     queries.push(text);
+
     if (text.includes("FROM staff_users")) {
       return { rows: [{ id: 5 }] };
     }
+
     return { rows: [] };
   }, async () => {
     const response = await fetch(`${baseUrl}/api/inquiries/42/assign`, {
@@ -257,7 +280,11 @@ test("Access control: Employee cannot reassign an inquiry they cannot access", a
   });
 
   assert.equal(queries.length, 2);
-  assert.match(queries[1], /created_by_id = \$4 OR assigned_to_id = \$4/);
+
+  assert.match(
+    queries[1],
+    /\$3 = 'admin' OR assigned_to_id = \$4/
+  );
 });
 
 test("Inquiry creation: The authenticated employee is recorded as creator", async () => {
@@ -266,10 +293,18 @@ test("Inquiry creation: The authenticated employee is recorded as creator", asyn
   await withQueryStub(async (text, values) => {
     if (text.includes("INSERT INTO inquiries")) {
       insertValues = values;
+
       return {
-        rows: [{ id: 88, customer_name: "Customer", created_by_id: 7 }],
+        rows: [
+          {
+            id: 88,
+            customer_name: "Customer",
+            created_by_id: 7,
+          },
+        ],
       };
     }
+
     return { rows: [] };
   }, async () => {
     const response = await fetch(`${baseUrl}/api/inquiries`, {
@@ -292,27 +327,31 @@ test("Inquiry creation: The authenticated employee is recorded as creator", asyn
   assert.equal(insertValues[5], 7);
 });
 
-test("Inquiry edit validation: Invalid inquiry ID is rejected with 400", async () => {
-  const response = await fetch(`${baseUrl}/api/inquiries/invalid-id`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Cookie: `token=${createToken()}`,
-    },
-    body: JSON.stringify({
-      customer_name: "Customer",
-      contact: "customer@example.com",
-      subject: "Updated subject",
-      description: "Updated description",
-    }),
-  });
+test("Inquiry validation: Invalid edit IDs are rejected", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/inquiries/invalid-id`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `token=${createToken()}`,
+      },
+      body: JSON.stringify({
+        customer_name: "Customer",
+        contact: "customer@example.com",
+        subject: "Updated subject",
+        description: "Updated description",
+      }),
+    }
+  );
+
   const data = await response.json();
 
   assert.equal(response.status, 400);
   assert.match(data.message, /invalid inquiry id/i);
 });
 
-test("Inquiry edit validation: Missing required fields are rejected with 400", async () => {
+test("Inquiry validation: Missing required edit fields are rejected", async () => {
   const response = await fetch(`${baseUrl}/api/inquiries/1`, {
     method: "PUT",
     headers: {
@@ -326,25 +365,30 @@ test("Inquiry edit validation: Missing required fields are rejected with 400", a
       description: "Updated description",
     }),
   });
+
   const data = await response.json();
 
   assert.equal(response.status, 400);
   assert.match(data.message, /required/i);
 });
 
-test("Direct Link Security & Validation: Invalid inquiry ID format is rejected with 400", async () => {
-  const response = await fetch(`${baseUrl}/api/inquiries/invalid-id`, {
-    headers: {
-      Cookie: `token=${createToken()}`,
-    },
-  });
+test("Security: Invalid inquiry IDs in direct links are rejected", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/inquiries/invalid-id`,
+    {
+      headers: {
+        Cookie: `token=${createToken()}`,
+      },
+    }
+  );
+
   const data = await response.json();
 
   assert.equal(response.status, 400);
   assert.match(data.message, /invalid inquiry id/i);
 });
 
-test("Business Validation: Submitting inquiry with missing required fields is rejected with 400", async () => {
+test("Inquiry validation: Missing required creation fields are rejected", async () => {
   const response = await fetch(`${baseUrl}/api/inquiries`, {
     method: "POST",
     headers: {
@@ -358,6 +402,7 @@ test("Business Validation: Submitting inquiry with missing required fields is re
       description: "Test description",
     }),
   });
+
   const data = await response.json();
 
   assert.equal(response.status, 400);
