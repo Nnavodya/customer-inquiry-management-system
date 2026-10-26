@@ -66,9 +66,12 @@ app.get("/api/staff", requireAuth, async (req, res) => {
          COUNT(i.id) FILTER (WHERE i.status = 'Resolved')::int AS resolved_count,
          COUNT(i.id)::int AS total_assigned
        FROM staff_users su
-       LEFT JOIN inquiries i ON su.id = i.assigned_to_id
+       LEFT JOIN inquiries i
+         ON su.id = i.assigned_to_id
+        AND ($1 = 'admin' OR i.created_by_id = $2 OR i.assigned_to_id = $2)
        GROUP BY su.id, su.username, su.full_name
-       ORDER BY active_count ASC, su.id ASC`
+       ORDER BY active_count ASC, su.id ASC`,
+      [req.staff.role, req.staff.id]
     );
     return res.json({ staff: result.rows });
   } catch (error) {
@@ -153,8 +156,8 @@ app.post("/api/inquiries", requireAuth, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO inquiries
-        (customer_name, contact, subject, description, assigned_to_id)
-       VALUES ($1, $2, $3, $4, $5)
+        (customer_name, contact, subject, description, assigned_to_id, created_by_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [
         trimmedCustomer,
@@ -162,6 +165,7 @@ app.post("/api/inquiries", requireAuth, async (req, res) => {
         trimmedSubject,
         trimmedDescription,
         verifiedAssignedId,
+        req.staff.id,
       ]
     );
 
@@ -239,13 +243,16 @@ app.put("/api/inquiries/:id", requireAuth, async (req, res) => {
     }
 
     const currentResult = await pool.query(
-      "SELECT id, updated_at FROM inquiries WHERE id = $1",
-      [id]
+      `SELECT id, updated_at
+       FROM inquiries
+       WHERE id = $1
+         AND ($2 = 'admin' OR created_by_id = $3 OR assigned_to_id = $3)`,
+      [id, req.staff.role, req.staff.id]
     );
 
     if (currentResult.rows.length === 0) {
       return res.status(404).json({
-        message: `Inquiry #${id} does not exist.`,
+        message: `Inquiry #${id} does not exist or you do not have access.`,
       });
     }
 
@@ -267,6 +274,7 @@ app.put("/api/inquiries/:id", requireAuth, async (req, res) => {
            description = $4,
            updated_at = NOW()
        WHERE id = $5
+         AND ($6 = 'admin' OR created_by_id = $7 OR assigned_to_id = $7)
        RETURNING *`,
       [
         trimmedCustomer,
@@ -274,8 +282,16 @@ app.put("/api/inquiries/:id", requireAuth, async (req, res) => {
         trimmedSubject,
         trimmedDescription,
         id,
+        req.staff.role,
+        req.staff.id,
       ]
     );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: `Inquiry #${id} does not exist or you do not have access.`,
+      });
+    }
 
     return res.json({
       message: "Inquiry updated successfully.",
@@ -328,8 +344,9 @@ app.get("/api/inquiries", requireAuth, async (req, res) => {
        )
        AND ($2 = '' OR i.status = $2)
        AND ($3 = '' OR i.assigned_to_id = $3::int)
+       AND ($4 = 'admin' OR i.created_by_id = $5 OR i.assigned_to_id = $5)
        ORDER BY i.created_at DESC, i.id DESC`,
-      [search, status, assignedTo]
+      [search, status, assignedTo, req.staff.role, req.staff.id]
     );
 
     return res.json({
@@ -371,13 +388,14 @@ app.get("/api/inquiries/:id", requireAuth, async (req, res) => {
          su.full_name AS assigned_full_name
        FROM inquiries i
        LEFT JOIN staff_users su ON i.assigned_to_id = su.id
-       WHERE i.id = $1`,
-      [id]
+       WHERE i.id = $1
+         AND ($2 = 'admin' OR i.created_by_id = $3 OR i.assigned_to_id = $3)`,
+      [id, req.staff.role, req.staff.id]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({
-        message: `Inquiry #${id} does not exist.`,
+        message: `Inquiry #${id} does not exist or you do not have access.`,
       });
     }
 
@@ -415,8 +433,11 @@ app.patch("/api/inquiries/:id/status", requireAuth, async (req, res) => {
 
     // 1. Fetch current status to enforce state transition rules
     const currentCheck = await pool.query(
-      "SELECT id, status, updated_at FROM inquiries WHERE id = $1",
-      [id]
+      `SELECT id, status, updated_at
+       FROM inquiries
+       WHERE id = $1
+         AND ($2 = 'admin' OR created_by_id = $3 OR assigned_to_id = $3)`,
+      [id, req.staff.role, req.staff.id]
     );
 
     if (currentCheck.rows.length === 0) {
@@ -458,9 +479,16 @@ app.patch("/api/inquiries/:id/status", requireAuth, async (req, res) => {
       `UPDATE inquiries
        SET status = $1, updated_at = NOW()
        WHERE id = $2
+         AND ($3 = 'admin' OR created_by_id = $4 OR assigned_to_id = $4)
        RETURNING *`,
-      [status, id]
+      [status, id, req.staff.role, req.staff.id]
     );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: `Inquiry #${id} does not exist or you do not have access.`,
+      });
+    }
 
     return res.json({
       message: `Inquiry status updated to '${status}'.`,
@@ -503,13 +531,14 @@ app.patch("/api/inquiries/:id/assign", requireAuth, async (req, res) => {
       `UPDATE inquiries
        SET assigned_to_id = $1, updated_at = NOW()
        WHERE id = $2
+         AND ($3 = 'admin' OR created_by_id = $4 OR assigned_to_id = $4)
        RETURNING *`,
-      [assigned_to_id || null, id]
+      [assigned_to_id || null, id, req.staff.role, req.staff.id]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({
-        message: "Inquiry not found.",
+        message: "Inquiry not found or you do not have access.",
       });
     }
 
@@ -540,7 +569,7 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT id, username, password_hash
+      `SELECT id, username, password_hash, role
        FROM staff_users
        WHERE username = $1`,
       [username.trim()]
@@ -558,7 +587,7 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: staff.id, username: staff.username },
+      { id: Number(staff.id), username: staff.username, role: staff.role },
       process.env.JWT_SECRET,
       { expiresIn: "2h" }
     );
@@ -576,6 +605,7 @@ app.post("/api/auth/login", async (req, res) => {
       staff: {
         id: staff.id,
         username: staff.username,
+        role: staff.role,
       },
     });
   } catch (error) {
@@ -593,6 +623,7 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
     staff: {
       id: req.staff.id,
       username: req.staff.username,
+      role: req.staff.role,
     },
   });
 });

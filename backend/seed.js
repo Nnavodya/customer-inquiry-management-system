@@ -13,10 +13,13 @@ async function seedDatabase() {
         username VARCHAR(50) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         full_name VARCHAR(100) NOT NULL DEFAULT 'Staff Member',
+        role VARCHAR(20) NOT NULL DEFAULT 'employee' CHECK (role IN ('admin', 'employee')),
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
 
       ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100) DEFAULT 'Staff Member';
+      ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'employee'
+        CHECK (role IN ('admin', 'employee'));
 
       CREATE TABLE IF NOT EXISTS inquiries (
         id SERIAL PRIMARY KEY,
@@ -25,17 +28,20 @@ async function seedDatabase() {
         subject VARCHAR(150) NOT NULL,
         description TEXT NOT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Resolved')),
+        created_by_id INTEGER REFERENCES staff_users(id) ON DELETE RESTRICT,
         assigned_to_id INTEGER REFERENCES staff_users(id) ON DELETE SET NULL,
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
 
+      ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS created_by_id INTEGER REFERENCES staff_users(id) ON DELETE RESTRICT;
       ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS assigned_to_id INTEGER REFERENCES staff_users(id) ON DELETE SET NULL;
       ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
 
       CREATE INDEX IF NOT EXISTS idx_inquiries_status ON inquiries(status);
       CREATE INDEX IF NOT EXISTS idx_inquiries_created_at ON inquiries(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_inquiries_contact ON inquiries(contact);
+      CREATE INDEX IF NOT EXISTS idx_inquiries_created_by ON inquiries(created_by_id);
     `);
 
     // 2. Hash default password
@@ -44,56 +50,86 @@ async function seedDatabase() {
 
     // 3. Upsert default staff accounts
     const staff1Result = await pool.query(
-      `INSERT INTO staff_users (username, password_hash, full_name)
-       VALUES ($1, $2, $3)
+      `INSERT INTO staff_users (username, password_hash, full_name, role)
+       VALUES ($1, $2, $3, 'employee')
        ON CONFLICT (username) DO UPDATE
-       SET password_hash = EXCLUDED.password_hash, full_name = EXCLUDED.full_name
+       SET password_hash = EXCLUDED.password_hash,
+           full_name = EXCLUDED.full_name,
+           role = EXCLUDED.role
        RETURNING id, username`,
       ["staff1", passwordHash, "Sarah Perera"]
     );
 
     const staff2Result = await pool.query(
-      `INSERT INTO staff_users (username, password_hash, full_name)
-       VALUES ($1, $2, $3)
+      `INSERT INTO staff_users (username, password_hash, full_name, role)
+       VALUES ($1, $2, $3, 'employee')
        ON CONFLICT (username) DO UPDATE
-       SET password_hash = EXCLUDED.password_hash, full_name = EXCLUDED.full_name
+       SET password_hash = EXCLUDED.password_hash,
+           full_name = EXCLUDED.full_name,
+           role = EXCLUDED.role
        RETURNING id, username`,
       ["staff2", passwordHash, "Kasun Silva"]
     );
 
+    const adminResult = await pool.query(
+      `INSERT INTO staff_users (username, password_hash, full_name, role)
+       VALUES ($1, $2, $3, 'admin')
+       ON CONFLICT (username) DO UPDATE
+       SET password_hash = EXCLUDED.password_hash,
+           full_name = EXCLUDED.full_name,
+           role = EXCLUDED.role
+       RETURNING id, username`,
+      ["admin", passwordHash, "System Administrator"]
+    );
+
     const staff1Id = staff1Result.rows[0].id;
     const staff2Id = staff2Result.rows[0].id;
+    const adminId = adminResult.rows[0].id;
+
+    await pool.query(
+      `UPDATE inquiries
+       SET created_by_id = COALESCE(assigned_to_id, $1)
+       WHERE created_by_id IS NULL`,
+      [adminId]
+    );
+    await pool.query(
+      "ALTER TABLE inquiries ALTER COLUMN created_by_id SET NOT NULL"
+    );
 
     console.log("Staff accounts seeded:");
     console.log(`- Username: staff1 / Password: ${defaultPassword} (Sarah Perera)`);
     console.log(`- Username: staff2 / Password: ${defaultPassword} (Kasun Silva)`);
+    console.log(`- Username: admin / Password: ${defaultPassword} (System Administrator)`);
 
     // 4. Seed sample inquiries if none exist
     const countCheck = await pool.query("SELECT COUNT(*) FROM inquiries");
     if (parseInt(countCheck.rows[0].count, 10) === 0) {
       await pool.query(
-        `INSERT INTO inquiries (customer_name, contact, subject, description, status, assigned_to_id)
+        `INSERT INTO inquiries (customer_name, contact, subject, description, status, assigned_to_id, created_by_id)
          VALUES
-         ($1, $2, $3, $4, 'New', NULL),
-         ($5, $6, $7, $8, 'In Progress', $9),
-         ($10, $11, $12, $13, 'Resolved', $14)`,
+         ($1, $2, $3, $4, 'New', NULL, $5),
+         ($6, $7, $8, $9, 'In Progress', $10, $11),
+         ($12, $13, $14, $15, 'Resolved', $16, $17)`,
         [
           // Inquiry 1 - New
           "Amila Fernando",
           "amila.f@example.com",
           "Inquiry regarding Cold Brew monthly subscription",
           "Hi, I would like to know if you offer weekly delivery packages for office supplies of freshly brewed cold brew canisters.",
+          adminId,
           // Inquiry 2 - In Progress
           "Dinesh Jayawardena",
           "+94 77 123 4567",
           "Espresso Machine Calibration Request",
           "Our café unit's steam wand is displaying pressure irregularities after the morning rush. Requesting technician support.",
           staff1Id,
+          staff1Id,
           // Inquiry 3 - Resolved
           "Nirosha Perera",
           "nirosha@techcorp.lk",
           "Corporate Event Coffee Catering",
           "Inquiring about mobile bar setup for our annual meetup with 80 attendees. Quotation sent and date confirmed.",
+          staff2Id,
           staff2Id,
         ]
       );

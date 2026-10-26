@@ -35,6 +35,7 @@ type Staff = {
   id: number;
   username: string;
   full_name?: string;
+  role?: "admin" | "employee";
   active_count?: number;
   resolved_count?: number;
   total_assigned?: number;
@@ -586,7 +587,14 @@ export default function Home() {
 
           <div className="mt-6 pt-5 border-t border-slate-100 text-xs text-slate-500 bg-slate-50 p-3 rounded-lg">
             <span className="font-semibold block text-slate-700 mb-1">Seeded Test Credentials:</span>
-            <span>Username: <strong className="font-mono text-slate-800">staff1</strong> | Password: <strong className="font-mono text-slate-800">Password123!</strong></span>
+            <span>
+              Employee: <strong className="font-mono text-slate-800">staff1</strong> /{" "}
+              <strong className="font-mono text-slate-800">Password123!</strong>
+            </span>
+            <span className="mt-1 block">
+              Admin: <strong className="font-mono text-slate-800">admin</strong> /{" "}
+              <strong className="font-mono text-slate-800">Password123!</strong>
+            </span>
           </div>
         </section>
       </main>
@@ -600,6 +608,7 @@ export default function Home() {
     >
       <Sidebar
         activePage={activePage}
+        role={staff.role ?? "employee"}
         onNavigate={handleNavigate}
         onLogout={handleLogout}
       />
@@ -721,7 +730,7 @@ export default function Home() {
                     Assign Handling Staff
                   </label>
                   <span className="text-[11px] font-semibold text-cyan-800 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-100">
-                    ★ Fair Load Suggestion
+                    ★ Suggested Assignment
                   </span>
                 </div>
                 <select
@@ -739,7 +748,7 @@ export default function Home() {
                   ))}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">
-                  Automatically suggests the team member with the lowest active workload to prevent overload.
+                  Suggests a team member with the lowest visible active workload. Admins see the full team workload.
                 </p>
               </div>
 
@@ -756,6 +765,7 @@ export default function Home() {
           </section>
 
           {/* Staff Team Profiles Section */}
+          {staff.role === "admin" && (
           <section
             id="team"
             className="mb-8 scroll-mt-6 rounded-2xl bg-white p-6 sm:p-8 shadow-sm border border-slate-200"
@@ -888,6 +898,7 @@ export default function Home() {
               })}
             </div>
           </section>
+          )}
 
           {/* Inquiry Overview List Section */}
           <section

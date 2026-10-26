@@ -1,6 +1,7 @@
 
 type SidebarProps = {
   activePage: "dashboard" | "inquiries" | "new-inquiry" | "team";
+  role: "admin" | "employee";
   onNavigate: (page: "dashboard" | "inquiries" | "new-inquiry" | "team") => void;
   onLogout: () => void;
 };
@@ -14,6 +15,7 @@ const navItems = [
 
 export default function Sidebar({
   activePage,
+  role,
   onNavigate,
   onLogout,
 }: SidebarProps) {
@@ -37,34 +39,40 @@ export default function Sidebar({
         </p>
 
         <div className="flex gap-2 overflow-x-auto md:flex-col">
-          {navItems.map((item) => {
-            const isActive = activePage === item.id;
+          {navItems
+            .filter((item) => role === "admin" || item.id !== "team")
+            .map((item) => {
+              const isActive = activePage === item.id;
 
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onNavigate(item.id)}
-                aria-current={isActive ? "page" : undefined}
-                className={`flex shrink-0 items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
-                  isActive
-                    ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-950/30"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                <span className="w-5 text-center text-lg" aria-hidden="true">
-                  {item.icon}
-                </span>
-                {item.label}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onNavigate(item.id)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex shrink-0 items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
+                    isActive
+                      ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-950/30"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <span className="w-5 text-center text-lg" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  {role === "employee" && item.id === "inquiries"
+                    ? "My Queue"
+                    : item.label}
+                </button>
+              );
+            })}
         </div>
       </nav>
 
       <div className="border-t border-white/10 p-4">
         <div className="mb-3 rounded-xl bg-white/5 p-3">
-          <p className="text-sm font-semibold text-white">Staff workspace</p>
+          <p className="text-sm font-semibold text-white">
+            {role === "admin" ? "Admin workspace" : "Staff workspace"}
+          </p>
           <p className="mt-1 text-xs text-slate-400">
             Manage customer inquiries
           </p>

@@ -13,6 +13,7 @@ describe("Sidebar navigation", () => {
     render(
       <Sidebar
         activePage="dashboard"
+        role="admin"
         onNavigate={onNavigate}
         onLogout={onLogout}
       />
@@ -32,6 +33,7 @@ describe("Sidebar navigation", () => {
     render(
       <Sidebar
         activePage="dashboard"
+        role="admin"
         onNavigate={onNavigate}
         onLogout={onLogout}
       />
@@ -44,6 +46,36 @@ describe("Sidebar navigation", () => {
     expect(onNavigate).toHaveBeenCalledWith("team");
   });
 
+  it("does not show Team Profiles to employees", () => {
+    render(
+      <Sidebar
+        activePage="dashboard"
+        role="employee"
+        onNavigate={vi.fn()}
+        onLogout={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /team profiles/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("labels the employee inquiry list as their queue", () => {
+    render(
+      <Sidebar
+        activePage="inquiries"
+        role="employee"
+        onNavigate={vi.fn()}
+        onLogout={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole("button", { name: /my queue/i })
+    ).toBeInTheDocument();
+  });
+
   it("calls the logout handler when Sign Out is clicked", () => {
     const onNavigate = vi.fn();
     const onLogout = vi.fn();
@@ -51,6 +83,7 @@ describe("Sidebar navigation", () => {
     render(
       <Sidebar
         activePage="dashboard"
+        role="admin"
         onNavigate={onNavigate}
         onLogout={onLogout}
       />
