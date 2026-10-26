@@ -14,9 +14,9 @@ A full-stack internal support workspace for Coffee Ninja staff. A staff member s
 
 - Staff sign-in with seeded employee and administrator accounts; there is no public registration or customer-facing submission portal.
 - Record a customer's inquiry as the signed-in staff member, including customer name, contact information, subject, and description. The API validates required fields and rejects a matching unresolved inquiry submitted in the previous 10 minutes.
-- Admins can view and manage all inquiries. Employees can view and manage inquiries they created or that are assigned to them. The API enforces these rules on list, detail, edit, status, and assignment routes.
+- Admins can view and manage all inquiries. Employees can view and manage only inquiries currently assigned to them; creating an inquiry does not by itself grant the creator access. The API enforces assignment-based access on list, detail, edit, status, and assignment routes.
 - Search inquiries by customer, contact, subject, or description; filter by status and assigned staff member.
-- Assign or unassign an inquiry to a staff member. The staff list is ordered by active workload, and the create form suggests the least-loaded member. This is a workload-based suggestion, not an automatic assignment guarantee.
+- Assign or unassign an inquiry to a staff member. The create form suggests a staff member based on the workload counts returned by the API; for employees, those counts are scoped to inquiries assigned to the signed-in employee, so the suggestion is not a team-wide workload comparison.
 - Admins can view Team Profiles with active, resolved, and total assigned inquiry counts, and filter the queue from a profile.
 - Edit customer-provided inquiry details from the queue.
 - Move inquiries through `New`, `In Progress`, and `Resolved`. Reopening a resolved inquiry requires confirmation in the UI; the API rejects a direct transition from `Resolved` to `New`.
@@ -24,7 +24,7 @@ A full-stack internal support workspace for Coffee Ninja staff. A staff member s
 
 ## Assignment workflow and scope
 
-The app implements the internal staff workflow described in the assignment: staff record customer inquiries and can assign them for follow-up. Creator attribution supports access after handoff. The app shows current status and last-updated time, but has no activity history, customer portal, automatic real-time sync, or pagination. See [DECISIONS.md](./DECISIONS.md) for the design rationale and limitations.
+The app implements the internal staff workflow described in the assignment: staff record customer inquiries and can assign them for follow-up. Creator attribution records who entered an inquiry, but employee access depends on the current assignee; the creator does not automatically retain access after handoff. If an inquiry is left unassigned, employees cannot see or manage it; an admin can access and assign it. The app shows current status and last-updated time, but has no activity history, customer portal, automatic real-time sync, or pagination. See [DECISIONS.md](./DECISIONS.md) for the design rationale and limitations.
 
 ## Requirements
 
@@ -144,7 +144,7 @@ cd backend
 npm test
 ```
 
-The backend tests cover rejection of unauthenticated requests and invalid tokens, admin/employee inquiry-list scope, employee detail/edit/status/assignment denial for inaccessible inquiries, creator attribution on inquiry creation, malformed inquiry IDs, missing required fields, and invalid edit requests. Many route tests use a database query stub; these tests do not prove complete PostgreSQL-backed create/edit/status workflows.
+The backend tests cover rejection of unauthenticated requests and invalid tokens, admin-wide and employee-assigned inquiry-list scope, employee detail/edit/status/assignment denial for unassigned inquiries, creator attribution on inquiry creation, malformed inquiry IDs, missing required fields, and invalid edit requests. Many route tests use a database query stub; these tests do not prove complete PostgreSQL-backed create/edit/status workflows.
 
 Run frontend tests:
 
