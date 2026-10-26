@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, useCallback } from "react";
 import Link from "next/link";
 
 const API_URL = "http://localhost:5000/api";
@@ -44,35 +44,39 @@ export default function InquiryDetailPage({
   const [message, setMessage] = useState("");
   const [authError, setAuthError] = useState(false);
 
-  async function fetchInquiryDetail() {
-    setLoading(true);
-    setError("");
-    setMessage("");
+const fetchInquiryDetail = useCallback(async () => {
+  setLoading(true);
+  setError("");
+  setMessage("");
 
-    try {
-      const response = await fetch(`${API_URL}/inquiries/${inquiryId}`, {
-        credentials: "include",
-      });
+  try {
+    const response = await fetch(`${API_URL}/inquiries/${inquiryId}`, {
+      credentials: "include",
+    });
 
-      if (response.status === 401) {
-        setAuthError(true);
-        throw new Error("You must be logged in to view this inquiry.");
-      }
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to load inquiry.");
-      }
-
-      setInquiry(data.inquiry);
-      setAuthError(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error connecting to server.");
-    } finally {
-      setLoading(false);
+    if (response.status === 401) {
+      setAuthError(true);
+      throw new Error("You must be logged in to view this inquiry.");
     }
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Failed to load inquiry.");
+    }
+
+    setInquiry(data.inquiry);
+    setAuthError(false);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Error connecting to server."
+    );
+  } finally {
+    setLoading(false);
   }
+}, [inquiryId]);
 
   async function fetchStaffList() {
     try {
@@ -88,10 +92,14 @@ export default function InquiryDetailPage({
     }
   }
 
-  useEffect(() => {
-    fetchInquiryDetail();
-    fetchStaffList();
-  }, [inquiryId]);
+ useEffect(() => {
+  const timer = setTimeout(() => {
+    void fetchInquiryDetail();
+    void fetchStaffList();
+  }, 0);
+
+  return () => clearTimeout(timer);
+}, [fetchInquiryDetail]);
 
   async function handleStatusTransition(newStatus: Status) {
     if (!inquiry) return;
